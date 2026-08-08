@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        <meta name="description" content="A simple, clean Rubik's Cube timer. Time your solves, track your statistics and compare yourself with the world record." />
+        <meta name="author" content="" />
+        <title>CubeTimer — Rubik's Cube Timer</title>
+        <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
+        <!-- Font Awesome icons (free version)-->
+        <script src="https://use.fontawesome.com/releases/v6.3.0/js/all.js" crossorigin="anonymous"></script>
+        <!-- Google fonts-->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet" />
+        <!-- Core theme CSS (includes Bootstrap)-->
+        <link href="css/styles.css" rel="stylesheet" />
+        <!-- CubeTimer custom styles-->
+        <link href="css/timer.css" rel="stylesheet" />
+        <!-- Firebase SDK (modular) - import map must precede any module script-->
+        <script type="importmap">
+        {
+            "imports": {
+                "firebase/app": "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js",
+                "firebase/auth": "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js",
+                "firebase/firestore": "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js"
+            }
+        }
+        </script>
+    </head>
+    <body id="page-top">
+        <!-- Navigation-->
+        <nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+            <div class="container px-4 px-lg-5">
+                <a class="navbar-brand" href="#page-top"><i class="fas fa-cube me-2"></i>CubeTimer</a>
+                <button class="navbar-toggler navbar-toggler-right" type="button" data-bs-toggle="collapse" data-bs-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+                    Menu
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarResponsive">
+                    <ul class="navbar-nav ms-auto">
+                        <li class="nav-item"><a class="nav-link" href="#stopwatch">Stopwatch</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#statistics">My Statistics</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Stopwatch (default view)-->
+        <section class="timer-section view active" id="stopwatch">
+            <div class="timer-stage" id="timerStage" role="button" tabindex="0" aria-label="Timer. Press space or tap to start and stop.">
+                <div class="timer-display" id="timerDisplay">0.000</div>
+                <div class="timer-hint" id="timerHint">Press Space to start</div>
+                <div class="latest-solve">
+                    <span class="latest-label">Latest solve</span>
+                    <span class="latest-time" id="latestSolve">—</span>
+                </div>
+            </div>
+
+            <div class="recent-panel">
+                <h3 class="recent-title">Recent solves</h3>
+                <ul class="recent-list" id="recentList"></ul>
+                <p class="empty-note" id="recentEmpty">No solves yet — go for your first one!</p>
+            </div>
+
+            <!-- World record progress bar-->
+            <div class="wr-bar-wrap">
+                <div class="container px-4 px-lg-5 wr-bar-row">
+                    <span class="wr-label"><i class="fas fa-trophy me-2"></i>World Record <span class="wr-time">3.13s</span></span>
+                    <div class="wr-bar" id="wrBar"><div class="wr-bar-fill" id="wrBarFill"></div></div>
+                    <span class="wr-pace" id="wrPace">compare your solve with the fastest in the world</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Statistics-->
+        <section class="stats-section view" id="statistics">
+            <div class="container px-4 px-lg-5">
+                <h2 class="section-title reveal">My Statistics</h2>
+                <div class="row g-4 reveal">
+                    <div class="col-6 col-lg-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="statBest">—</div>
+                            <div class="stat-label">Personal Best</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="statAvg">—</div>
+                            <div class="stat-label">Average Time</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="statCount">0</div>
+                            <div class="stat-label">Total Solves</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="statTotal">—</div>
+                            <div class="stat-label">Total Time Solving</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Online profile & friends (Firebase - optional, rendered by js/firebase.js)-->
+                <div class="row g-4 mt-1 online-row">
+                    <div class="col-lg-7">
+                        <div class="panel reveal">
+                            <h3 class="panel-title"><i class="fas fa-user-circle me-2"></i>Online Profile</h3>
+                            <div id="onlineProfile">
+                                <p class="empty-note">Online features are loading…</p>
+                            </div>
+                        </div>
+                        <div class="panel reveal online-panel-gap">
+                            <h3 class="panel-title"><i class="fas fa-users me-2"></i>Friends</h3>
+                            <div id="onlineFriends">
+                                <p class="empty-note">Create an online profile to add friends.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel reveal">
+                            <h3 class="panel-title"><i class="fas fa-trophy me-2"></i>Friends Leaderboard</h3>
+                            <div id="onlineLeaderboard">
+                                <p class="empty-note">Create an online profile to compete with friends.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-4 mt-1">
+                    <div class="col-lg-7">
+                        <div class="panel reveal">
+                            <h3 class="panel-title"><i class="fas fa-list-ul me-2"></i>All Solves</h3>
+                            <ul class="solves-list" id="solvesList"></ul>
+                            <p class="empty-note" id="solvesEmpty">No solves recorded yet — head to the Stopwatch and press Space!</p>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel reveal">
+                            <h3 class="panel-title"><i class="fas fa-medal me-2"></i>Leaderboard</h3>
+                            <ol class="leaderboard" id="leaderboard"></ol>
+                            <p class="empty-note" id="leaderboardEmpty">No solves to rank yet.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics graph-->
+                <div class="panel chart-panel reveal">
+                    <h3 class="panel-title"><i class="fas fa-chart-line me-2"></i>Solve Progress</h3>
+                    <div class="chart-wrap">
+                        <canvas id="statsChart" aria-label="Line graph of solve times over solve number"></canvas>
+                        <p class="empty-note chart-empty" id="chartEmpty" hidden>No solves yet — complete a solve to see your progress.</p>
+                    </div>
+                    <div class="chart-controls" role="group" aria-label="Chart time range">
+                        <button type="button" class="chart-btn" data-range="10" aria-pressed="false">Last 10</button>
+                        <button type="button" class="chart-btn" data-range="30" aria-pressed="false">Last 30</button>
+                        <button type="button" class="chart-btn active" data-range="all" aria-pressed="true">All Solves</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- About-->
+        <section class="about-page view" id="about">
+            <div class="container px-4 px-lg-5">
+                <h2 class="section-title reveal">About</h2>
+                <div class="about-intro reveal">
+                    <p>
+                        CubeTimer is a simple, clean stopwatch built for speedcubers. Press <strong>Space</strong> to start a solve and
+                        press it again to stop — every finished solve is saved automatically, so you can watch your progress over time
+                        and even compare your pace with the official world record.
+                    </p>
+                </div>
+                <div class="row g-4 mt-1">
+                    <div class="col-md-6">
+                        <div class="panel reveal">
+                            <h3 class="panel-title"><i class="fas fa-user-astronaut me-2"></i>Developer</h3>
+                            <p class="panel-text">
+                                CubeTimer was created by Rubik’s Cube enthusiasts Cassiel Stössel and Quirin Leumann. Cassiel developed the website, while Quirin created the concept. Together, they built a simple and reliable tool for speedcubers to track solves, follow progress, and improve their performance.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="panel reveal">
+                            <h3 class="panel-title"><i class="fas fa-envelope me-2"></i>Contact</h3>
+                            <p class="panel-text">Questions, feedback or future ideas? Reach out any time.</p>
+                            <a class="about-link" href="mailto:cassielstoessel@gmail.com"><i class="fas fa-envelope me-2"></i>cassielstoessel@gmail.com</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer-->
+        <footer class="footer bg-black small text-center text-white-50">
+            <div class="container px-4 px-lg-5">
+                CubeTimer · made for speedcubers · Copyright &copy; <span id="footerYear">2024</span>
+            </div>
+        </footer>
+
+        <!-- Welcome notification (shown once per visit)-->
+        <div class="welcome-overlay" id="welcomePopup" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+            <div class="welcome-card">
+                <div class="welcome-icon"><i class="fas fa-cube"></i></div>
+                <h2 id="welcomeTitle">Welcome!</h2>
+                <p>This website is made for tracking your Rubik's Cube solves.</p>
+                <p>Please be honest and only record real solves. If you accidentally save an incorrect time, you can delete it later from the Statistics page.</p>
+                <p class="welcome-goodluck">Good luck and have fun!</p>
+                <button class="btn-welcome" id="welcomeClose">Close</button>
+            </div>
+        </div>
+
+        <!-- Bootstrap core JS-->
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+        <!-- Core theme JS (navbar + scrollspy)-->
+        <script src="js/scripts.js"></script>
+        <!-- Chart.js (statistics graph)-->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+        <!-- CubeTimer app JS-->
+        <script src="js/timer.js"></script>
+        <!-- CubeTimer online profile & friends (Firebase - optional)-->
+        <script type="module" src="js/firebase.js"></script>
+    </body>
+</html>

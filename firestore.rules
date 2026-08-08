@@ -1,0 +1,113 @@
+rules_version = '2';
+
+// ===========================================================================
+// CubeTimer — Firestore Security Rules
+// ===========================================================================
+// HOW TO INSTALL:
+//   1. Firebase Console → your project → Firestore Database → Rules tab.
+//   2. Delete everything in the editor and paste this whole file.
+//   3. Click "Publish".
+//
+// What these rules do:
+//   * Users can only write their own profile (users/{uid}), their own friend
+//     list (users/{uid}/friends/...) and their own solves (solves/...).
+//   * Every write is tied to request.auth.uid — the client can never change
+//     the "owner" of a document, so impersonation is impossible.
+//   * usernames/ and friendCodes/ are immutable uniqueness registries: the
+//     document id IS the username / code, so duplicates can never be created.
+//   * Any signed-in user may read the public profile/statistics needed for
+//     the Friends Leaderboard (users/{uid}). Nothing else is publicly
+//     readable, and no collection may be listed by anyone.
+//
+// Data structure (see js/firebase.js for the full explanation):
+//   usernames/{name}             lowercased username → { uid, name, displayName }
+//   friendCodes/{code}           friend code → { uid, code }
+//   users/{uid}                  profile + aggregate stats
+//   users/{uid}/friends/{fuid}   one-way friend entry (doc id = friend's uid)
+//   solves/{solveId}             one doc per solve (doc id = local solve id)
+// ===========================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -----------------------------------------------------------------------
+    // Users: profile + aggregate statistics.
+    // Readable by any signed-in user (public info for the friends
+    // leaderboard). Only the owner may create/update/delete, and the owner
+    // field can never be changed.
+    // -----------------------------------------------------------------------
+    match /users/{uid} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      // NOTE: these rules enforce OWNERSHIP, not truthfulness. A user can
+      // write any value into their own statistics (e.g. personalBest: 1),
+      // which is a known limitation of a client-side timer — solve times
+      // cannot be validated server-side. Leaderboards are for fun.
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.uid == uid;
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.uid == uid
+                    && request.resource.data.username == resource.data.username
+                    && request.resource.data.friendCode == resource.data.friendCode;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+
+      // Friends subcollection: only the owner can read or modify their own
+      // list. A friend entry may only be created when the target user
+      // actually exists, and a user can never add themselves.
+      match /friends/{friendUid} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow create: if request.auth != null
+                      && request.auth.uid == uid
+                      && friendUid != uid
+                      && exists(/databases/$(database)/documents/users/$(friendUid));
+        allow update: if false;
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Username registry: the document id is the lowercased username, so two
+    // users can never claim the same name (a second create is rejected).
+    // Docs may be created once, by the user they belong to, and never
+    // updated, deleted or listed. Reads are only allowed per-document so a
+    // username's availability can be checked.
+    // -----------------------------------------------------------------------
+    match /usernames/{name} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.name == name;
+      allow update, delete: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Friend code registry: the document id is the code itself (CUBE-XXXX),
+    // so codes are guaranteed unique. Readable per-document so anyone can
+    // look up a code when adding a friend; otherwise immutable.
+    // -----------------------------------------------------------------------
+    match /friendCodes/{code} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.code == code;
+      allow update, delete: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Solves: one document per solve. The owner is stored on the document and
+    // must always match the authenticated user — a user can never create,
+    // read or delete another user's solves.
+    // -----------------------------------------------------------------------
+    match /solves/{solveId} {
+      allow get: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow list: if false;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+  }
+}
