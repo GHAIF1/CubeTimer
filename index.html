@@ -40,7 +40,8 @@
                 <div class="collapse navbar-collapse" id="navbarResponsive">
                     <ul class="navbar-nav ms-auto">
                         <li class="nav-item"><a class="nav-link" href="#stopwatch">Stopwatch</a></li>
-                        <li class="nav-item"><a class="nav-link" href="#statistics">My Statistics</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#statistics">Statistics</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#profile">Profile</a></li>
                         <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
                     </ul>
                 </div>
@@ -77,7 +78,7 @@
         <!-- Statistics-->
         <section class="stats-section view" id="statistics">
             <div class="container px-4 px-lg-5">
-                <h2 class="section-title reveal">My Statistics</h2>
+                <h2 class="section-title reveal">Statistics</h2>
                 <div class="row g-4 reveal">
                     <div class="col-6 col-lg-3">
                         <div class="stat-card">
@@ -105,32 +106,6 @@
                     </div>
                 </div>
 
-                <!-- Online profile & friends (Firebase - optional, rendered by js/firebase.js)-->
-                <div class="row g-4 mt-1 online-row">
-                    <div class="col-lg-7">
-                        <div class="panel reveal">
-                            <h3 class="panel-title"><i class="fas fa-user-circle me-2"></i>Online Profile</h3>
-                            <div id="onlineProfile">
-                                <p class="empty-note">Online features are loading…</p>
-                            </div>
-                        </div>
-                        <div class="panel reveal online-panel-gap">
-                            <h3 class="panel-title"><i class="fas fa-users me-2"></i>Friends</h3>
-                            <div id="onlineFriends">
-                                <p class="empty-note">Create an online profile to add friends.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-5">
-                        <div class="panel reveal">
-                            <h3 class="panel-title"><i class="fas fa-trophy me-2"></i>Friends Leaderboard</h3>
-                            <div id="onlineLeaderboard">
-                                <p class="empty-note">Create an online profile to compete with friends.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="row g-4 mt-1">
                     <div class="col-lg-7">
                         <div class="panel reveal">
@@ -139,11 +114,17 @@
                             <p class="empty-note" id="solvesEmpty">No solves recorded yet — head to the Stopwatch and press Space!</p>
                         </div>
                     </div>
-                    <div class="col-lg-5">
+                    <div class="col-lg-5 panel-stack">
                         <div class="panel reveal">
                             <h3 class="panel-title"><i class="fas fa-medal me-2"></i>Leaderboard</h3>
                             <ol class="leaderboard" id="leaderboard"></ol>
                             <p class="empty-note" id="leaderboardEmpty">No solves to rank yet.</p>
+                        </div>
+                        <div class="panel reveal online-panel-gap">
+                            <h3 class="panel-title"><i class="fas fa-trophy me-2"></i>Friends Leaderboard</h3>
+                            <div id="onlineLeaderboard">
+                                <p class="empty-note">Create an online profile to compete with friends.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -159,6 +140,29 @@
                         <button type="button" class="chart-btn" data-range="10" aria-pressed="false">Last 10</button>
                         <button type="button" class="chart-btn" data-range="30" aria-pressed="false">Last 30</button>
                         <button type="button" class="chart-btn active" data-range="all" aria-pressed="true">All Solves</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Profile (online account, friends & leaderboard - rendered by js/firebase.js)-->
+        <section class="profile-section view" id="profile">
+            <div class="container px-4 px-lg-5">
+                <h2 class="section-title reveal">My Profile</h2>
+                <div class="row g-4 mt-1 justify-content-center">
+                    <div class="col-lg-7">
+                        <div class="panel reveal">
+                            <h3 class="panel-title"><i class="fas fa-user-circle me-2"></i>Online Profile</h3>
+                            <div id="onlineProfile">
+                                <p class="empty-note">Online features are loading…</p>
+                            </div>
+                        </div>
+                        <div class="panel reveal online-panel-gap">
+                            <h3 class="panel-title"><i class="fas fa-users me-2"></i>Friends</h3>
+                            <div id="onlineFriends">
+                                <p class="empty-note">Create an online profile to add friends.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -46,7 +46,7 @@
 */
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInAnonymously, deleteUser } from 'firebase/auth';
 import {
     getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
     collection, getDocs, writeBatch, serverTimestamp
@@ -447,24 +447,12 @@ function loadFriends() {
 }
 
 // ---------------------------------------------------------------------------
-// Logout / copy
+// Copy helpers
 // ---------------------------------------------------------------------------
-
-function logout() {
-    if (!auth) {
-        return;
-    }
-    setProfileBusy(true);
-    signOut(auth).then(function () {
-        setProfileBusy(false);
-        // Local solves are intentionally kept — only the online session ends.
-        setProfileStatus('Logged out — your local solves are untouched.', 'ok');
-    }).catch(function () {
-        setProfileBusy(false);
-        setProfileStatus('Could not log out right now.', 'error');
-    });
-    // handleAuthState resets the UI.
-}
+// NOTE: there is intentionally no "Log Out" button. Accounts are anonymous
+// and Firebase deletes the session on sign-out, so the user could never sign
+// back in as the same account — logging out would just lose the profile.
+// Removing the account (if ever needed) is done with "Delete Account".
 
 function copyFriendCode() {
     if (!profile || !profile.friendCode) {
@@ -498,6 +486,135 @@ function legacyCopy(text, done) {
         setProfileStatus('Could not copy — copy it manually.', 'error');
     }
     document.body.removeChild(ta);
+}
+
+// ---------------------------------------------------------------------------
+// Account deletion
+// ---------------------------------------------------------------------------
+
+// Two-step inline confirmation: the first click arms the button, the second
+// click performs the deletion (it resets after a few seconds if not clicked).
+var deleteArmed = false;
+var deleteArmedTimer = null;
+
+function resetDeleteArmed() {
+    deleteArmed = false;
+    if (deleteArmedTimer) {
+        clearTimeout(deleteArmedTimer);
+        deleteArmedTimer = null;
+    }
+}
+
+function handleDeleteClick(btn) {
+    if (!deleteArmed) {
+        deleteArmed = true;
+        btn.textContent = 'Click again to confirm';
+        btn.classList.add('danger-armed');
+        deleteArmedTimer = setTimeout(function () {
+            resetDeleteArmed();
+            renderProfile(); // re-render → button back to normal
+        }, 5000);
+        return;
+    }
+    resetDeleteArmed();
+    deleteAccount();
+}
+
+// Deletes the online account: friend entries, solves, profile, username and
+// friend-code registries, then the Firebase anonymous account itself. Local
+// solves on this device are intentionally kept. (Solves synced from another
+// device are not covered by this device's sync state and are left alone.)
+// Requires the updated firestore.rules — owners may delete their usernames/
+// and friendCodes/ docs.
+function deleteAccount() {
+    if (!db || !currentUid || !profile) {
+        setProfileStatus('Create an online profile first.', 'error');
+        return;
+    }
+    if (!navigator.onLine) {
+        setProfileStatus('You are offline — try again when you are back online.', 'error');
+        return;
+    }
+
+    var uid = currentUid;
+    var nameId = (profile.username || '').toLowerCase();
+    var code = profile.friendCode;
+    setProfileStatus('Deleting your account…', 'ok');
+    setDeleteBusy(true);
+
+    // Solve documents — the ids the app has synced are tracked locally. They
+    // are removed in small chunks first (batches are limited to 500 writes),
+    // then the small bounded profile set below goes in one atomic batch.
+    var solveIds = [];
+    var seen = {};
+    var state = loadSyncState();
+    state.synced.concat(state.pendingDeletes).forEach(function (id) {
+        if (!seen[id]) {
+            seen[id] = true;
+            solveIds.push(id);
+        }
+    });
+
+    deleteSolveDocs(solveIds).then(function () {
+        return getDocs(collection(db, 'users', uid, 'friends'));
+    }).then(function (snap) {
+        var batch = writeBatch(db);
+        snap.docs.forEach(function (d) {
+            batch.delete(d.ref);
+        });
+        batch.delete(doc(db, 'users', uid));
+        if (nameId) {
+            batch.delete(doc(db, 'usernames', nameId));
+        }
+        if (code) {
+            batch.delete(doc(db, 'friendCodes', code));
+        }
+        return batch.commit();
+    }).then(function () {
+        // The online data is gone — reset local state and the UI first, so a
+        // failure of the final step never leaves a stale profile on screen.
+        saveSyncState({ uid: null, synced: [], pendingDeletes: [] });
+        currentUid = null;
+        profile = null;
+        friends = [];
+        setDeleteBusy(false);
+        renderAllOnline();
+
+        // Remove the anonymous authentication account itself.
+        if (!auth.currentUser) {
+            setProfileStatus('Account deleted — your local solves stay on this device.', 'ok');
+            return;
+        }
+        deleteUser(auth.currentUser).then(function () {
+            setProfileStatus('Account deleted — your local solves stay on this device.', 'ok');
+        }).catch(function () {
+            setProfileStatus('Your data was deleted, but the sign-in could not be removed — log out or delete it in the Firebase console.', 'error');
+        });
+    }).catch(function (err) {
+        setDeleteBusy(false);
+        if (err && err.code === 'permission-denied') {
+            setProfileStatus('Could not delete — publish the updated firestore.rules in the Firebase console, then try again.', 'error');
+        } else {
+            setProfileStatus('Could not delete your account — check your connection.', 'error');
+        }
+    });
+}
+
+// Deletes solve documents in chunks of 400 (Firestore batches cap at 500
+// writes) so account deletion also works for users with many solves.
+function deleteSolveDocs(ids) {
+    var CHUNK = 400;
+    var chunks = [];
+    for (var i = 0; i < ids.length; i += CHUNK) {
+        chunks.push(ids.slice(i, i + CHUNK));
+    }
+    return chunks.reduce(function (chain, chunkIds) {
+        return chain.then(function () {
+            return Promise.all(chunkIds.map(function (id) {
+                return deleteDoc(doc(db, 'solves', id));
+            }));
+        });
+    }, Promise.resolve());
 }
 
 // ---------------------------------------------------------------------------
@@ -746,6 +863,7 @@ function renderProfile() {
     if (!box) {
         return;
     }
+    resetDeleteArmed(); // any re-render cancels a pending delete confirmation
     box.textContent = '';
 
     if (!firebaseReady) {
@@ -830,8 +948,19 @@ function renderProfile() {
     actions.className = 'online-actions';
     actions.appendChild(button('online-btn', 'Copy Code', copyFriendCode));
     actions.appendChild(button('online-btn', 'Add Friend', toggleAddFriend));
-    actions.appendChild(button('online-btn ghost', 'Log Out', logout));
     box.appendChild(actions);
+
+    var danger = document.createElement('div');
+    danger.className = 'online-danger-zone';
+    var delBtn = button('online-btn danger', 'Delete Account', function () {
+        handleDeleteClick(delBtn);
+    });
+    danger.appendChild(delBtn);
+    var delNote = document.createElement('p');
+    delNote.className = 'panel-footnote';
+    delNote.textContent = 'Deletes your profile, friends and online solves. Your local solves on this device stay.';
+    danger.appendChild(delNote);
+    box.appendChild(danger);
     box.appendChild(statusEl('onlineProfileStatus'));
 }
 
@@ -1077,6 +1206,15 @@ function setFriendsBusy(busy) {
     if (btn) {
         btn.disabled = busy;
         btn.textContent = busy ? 'Adding…' : 'Add';
+    }
+}
+
+function setDeleteBusy(busy) {
+    var btn = document.querySelector('.online-btn.danger');
+    if (btn) {
+        btn.disabled = busy;
+        btn.textContent = busy ? 'Deleting…' : 'Delete Account';
+        btn.classList.remove('danger-armed');
     }
 }
 

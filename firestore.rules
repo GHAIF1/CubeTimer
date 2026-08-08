@@ -13,8 +13,9 @@ rules_version = '2';
 //     list (users/{uid}/friends/...) and their own solves (solves/...).
 //   * Every write is tied to request.auth.uid — the client can never change
 //     the "owner" of a document, so impersonation is impossible.
-//   * usernames/ and friendCodes/ are immutable uniqueness registries: the
-//     document id IS the username / code, so duplicates can never be created.
+//   * usernames/ and friendCodes/ are uniqueness registries: the document id
+//     IS the username / code, so duplicates can never be created. Entries can
+//     only be deleted by their owner (when deleting their account).
 //   * Any signed-in user may read the public profile/statistics needed for
 //     the Friends Leaderboard (users/{uid}). Nothing else is publicly
 //     readable, and no collection may be listed by anyone.
@@ -71,8 +72,11 @@ service cloud.firestore {
     // Username registry: the document id is the lowercased username, so two
     // users can never claim the same name (a second create is rejected).
     // Docs may be created once, by the user they belong to, and never
-    // updated, deleted or listed. Reads are only allowed per-document so a
-    // username's availability can be checked.
+    // updated or listed. The owner may delete their own entry when they
+    // delete their account (which frees the username for someone else).
+    // Deleting a document that does not exist is a no-op and is allowed so
+    // account deletion stays idempotent. Reads are only allowed per-document
+    // so a username's availability can be checked.
     // -----------------------------------------------------------------------
     match /usernames/{name} {
       allow get: if request.auth != null;
@@ -80,13 +84,16 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.name == name;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if request.auth != null
+                    && (resource == null || resource.data.uid == request.auth.uid);
     }
 
     // -----------------------------------------------------------------------
     // Friend code registry: the document id is the code itself (CUBE-XXXX),
     // so codes are guaranteed unique. Readable per-document so anyone can
-    // look up a code when adding a friend; otherwise immutable.
+    // look up a code when adding a friend. The owner may delete their own
+    // entry when they delete their account; otherwise immutable.
     // -----------------------------------------------------------------------
     match /friendCodes/{code} {
       allow get: if request.auth != null;
@@ -94,7 +101,9 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.code == code;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if request.auth != null
+                    && (resource == null || resource.data.uid == request.auth.uid);
     }
 
     // -----------------------------------------------------------------------
@@ -107,7 +116,10 @@ service cloud.firestore {
       allow list: if false;
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
       allow update: if false;
-      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      // Owner-only delete; deleting a non-existent document is a no-op and is
+      // allowed so account deletion stays idempotent.
+      allow delete: if request.auth != null
+                    && (resource == null || resource.data.uid == request.auth.uid);
     }
   }
 }
