@@ -141,7 +141,12 @@ function handleAuthState(user) {
     authSettled = true;
     if (user && user.uid) {
         currentUid = user.uid;
+        // Load the profile AND the friend list on every sign-in/refresh, so
+        // existing friends are always restored from Firestore instead of
+        // starting empty.
         loadProfile().then(function () {
+            return loadFriends();
+        }).then(function () {
             renderAllOnline();
             return syncPendingSolves();
         }).then(function () {
@@ -366,7 +371,26 @@ function addFriend() {
         if (friendUid === currentUid) {
             throw { code: 'own-code' };
         }
-        return getDoc(doc(db, 'users', currentUid, 'friends', friendUid));
+        // First make sure the friend's account actually still exists. If the
+        // code points at a deleted account, clean up any leftover friend entry
+        // so it can never linger invisibly (the "ghost friend" bug) and report
+        // the code as unknown.
+        return getDoc(doc(db, 'users', friendUid)).then(function (friendDoc) {
+            if (!friendDoc.exists()) {
+                // The code points at a deleted account — clean up any leftover
+                // entry, refresh the list, then report the code as unknown.
+                return deleteFriendEntry(friendUid).catch(function () {
+                    /* best-effort cleanup */
+                }).then(function () {
+                    return loadFriends();
+                }).then(function () {
+                    renderFriends();
+                    renderLeaderboard();
+                    throw { code: 'code-not-found' };
+                });
+            }
+            return getDoc(doc(db, 'users', currentUid, 'friends', friendUid));
+        });
     }).then(function (existing) {
         if (existing.exists()) {
             throw { code: 'already-friends' };
@@ -398,11 +422,19 @@ function addFriend() {
     });
 }
 
+// Deletes a friend entry from the owner's list. Deleting an entry that does
+// not exist is a no-op, so callers can safely use this for housekeeping.
+function deleteFriendEntry(friendUid) {
+    return deleteDoc(doc(db, 'users', currentUid, 'friends', friendUid));
+}
+
 function removeFriend(friendUid) {
     if (!db || !currentUid) {
         return;
     }
-    deleteDoc(doc(db, 'users', currentUid, 'friends', friendUid)).then(function () {
+    // Deletes by the friend ENTRY document id (== the friend's uid) so a
+    // mismatch could never leave a hidden entry behind.
+    deleteFriendEntry(friendUid).then(function () {
         return loadFriends();
     }).then(function () {
         renderFriends();
@@ -427,19 +459,35 @@ function loadFriends() {
         return Promise.resolve(friends);
     }
     return getDocs(collection(db, 'users', currentUid, 'friends')).then(function (snap) {
-        var uids = snap.docs.map(function (d) {
-            return d.id;
-        });
-        return Promise.all(uids.map(function (uid) {
-            return getDoc(doc(db, 'users', uid)).then(function (s) {
-                return s.exists() ? s.data() : null;
+        return Promise.all(snap.docs.map(function (d) {
+            return getDoc(doc(db, 'users', d.id)).then(function (s) {
+                return { entryId: d.id, doc: s.exists() ? s.data() : null, gone: !s.exists() };
             }).catch(function () {
-                return null;
+                // Transient read failure (offline etc.) — keep the entry, just
+                // do not show it this time.
+                return { entryId: d.id, doc: null, gone: false };
             });
         }));
-    }).then(function (docs) {
-        friends = docs.filter(Boolean);
-        return friends;
+    }).then(function (results) {
+        friends = [];
+        var cleanups = [];
+        results.forEach(function (r) {
+            if (r.doc) {
+                // Keep the entry document id alongside the friend's profile,
+                // so removing a friend always targets the real entry.
+                r.doc.id = r.entryId;
+                friends.push(r.doc);
+            } else if (r.gone) {
+                // The friend's profile no longer exists — remove the stale
+                // entry so it can never linger invisibly and block re-adding.
+                cleanups.push(deleteFriendEntry(r.entryId).catch(function () {
+                    /* best-effort cleanup — retried on the next load */
+                }));
+            }
+        });
+        return Promise.all(cleanups).then(function () {
+            return friends;
+        });
     }).catch(function () {
         friends = [];
         return friends;
@@ -1039,7 +1087,7 @@ function renderFriends() {
         icon.className = 'fas fa-trash-alt';
         rm.appendChild(icon);
         rm.addEventListener('click', function () {
-            removeFriend(f.uid);
+            removeFriend(f.id);
         });
 
         li.appendChild(name);
